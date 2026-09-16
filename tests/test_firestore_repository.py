@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
-from app.auth.models import NewRefreshSession, NewUser, UserRole
+from app.auth.models import NewUser, UserRole
 from app.auth.repository import FirestoreAuthRepository
 
 
@@ -135,33 +135,3 @@ def test_firestore_repository_persists_account_and_prevents_duplicate_email(
     assert client.collections["users"][user.id]["password_hash"] == user.password_hash
     assert "id" not in client.collections["users"][user.id]
     assert "user_emails" not in client.collections
-
-
-def test_firestore_repository_persists_and_revokes_refresh_session(
-    monkeypatch,
-) -> None:
-    repository, client = make_repository(monkeypatch)
-    new_session = NewRefreshSession(
-        user_id="user-123",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
-    )
-    revoked_at = datetime.now(timezone.utc)
-
-    session = repository.create_refresh_session(new_session)
-
-    assert session.id == "firestore-id-1"
-    assert repository.get_refresh_session(session.user_id, session.id) == session
-    assert (
-        repository.revoke_refresh_session(session.user_id, session.id, revoked_at)
-        is True
-    )
-    assert (
-        repository.revoke_refresh_session(session.user_id, session.id, revoked_at)
-        is False
-    )
-    stored_session = repository.get_refresh_session(session.user_id, session.id)
-    assert stored_session is not None
-    assert stored_session.revoked_at == revoked_at
-    assert session.id in client.subcollections["user-123/refresh_sessions"]
-    assert "id" not in client.subcollections["user-123/refresh_sessions"][session.id]
-    assert "refresh_sessions" not in client.collections

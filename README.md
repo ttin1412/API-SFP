@@ -33,12 +33,12 @@ Check the service at <http://localhost:8080/health>. The expected response is:
 Authentication endpoints are available under `/api/v1/auth`: `register`,
 `login`, `refresh`, and `logout`. Access tokens are sent as
 `Authorization: Bearer <token>`. Refresh tokens rotate on use and are revoked
-by logout. User accounts and refresh sessions are persisted in Firestore by
-default. Set `GCP_PROJECT_ID`, and use Application Default Credentials locally
+by logout. User accounts are persisted in Firestore by default. Set
+`GCP_PROJECT_ID`, and use Application Default Credentials locally
 (`gcloud auth application-default login`) or a least-privilege service account
 in Cloud Run. Set `AUTH_REPOSITORY_BACKEND=memory` only for local ephemeral use.
-Refresh sessions are stored below their owning user at
-`users/{user_id}/refresh_sessions/{session_id}`.
+Refresh-session rotation state is process-local and is not written to Firestore;
+users must log in again after an API restart.
 The authenticated `GET /api/v1/auth/me` endpoint can be used to validate an
 access token. Set `JWT_SECRET_KEY` to a random value of at least 32 characters
 outside local development.

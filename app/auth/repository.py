@@ -16,13 +16,17 @@ from app.auth.models import NewRefreshSession, NewUser, RefreshSession, User, Us
 
 
 class AuthRepository(Protocol):
-    """Storage operations required by the authentication service."""
+    """User-account storage operations required by authentication."""
 
     def get_user_by_id(self, user_id: str) -> User | None: ...
 
     def get_user_by_email(self, email: str) -> User | None: ...
 
     def create_user(self, user: NewUser) -> User | None: ...
+
+
+class RefreshSessionRepository(Protocol):
+    """Server-side state required for refresh rotation and logout."""
 
     def create_refresh_session(self, session: NewRefreshSession) -> RefreshSession: ...
 
@@ -41,7 +45,6 @@ class InMemoryAuthRepository:
     def __init__(self) -> None:
         self._users_by_id: dict[str, User] = {}
         self._user_ids_by_email: dict[str, str] = {}
-        self._sessions: dict[tuple[str, str], RefreshSession] = {}
         self._lock = RLock()
 
     def get_user_by_id(self, user_id: str) -> User | None:
@@ -61,6 +64,14 @@ class InMemoryAuthRepository:
             self._users_by_id[stored_user.id] = stored_user
             self._user_ids_by_email[stored_user.email] = stored_user.id
             return stored_user
+
+
+class InMemoryRefreshSessionRepository:
+    """Keep refresh rotation state in the current API process only."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[tuple[str, str], RefreshSession] = {}
+        self._lock = RLock()
 
     def create_refresh_session(self, session: NewRefreshSession) -> RefreshSession:
         with self._lock:
@@ -87,10 +98,9 @@ class InMemoryAuthRepository:
 
 
 class FirestoreAuthRepository:
-    """Persist user accounts and refresh sessions in Firestore."""
+    """Persist user accounts in Firestore."""
 
     USERS_COLLECTION = "users"
-    SESSIONS_COLLECTION = "refresh_sessions"
 
     def __init__(self, client_factory: Callable[[], firestore.Client]) -> None:
         # Lazy creation lets health checks run before cloud credentials are used.
@@ -137,64 +147,6 @@ class FirestoreAuthRepository:
             return User(id=user_ref.id, **vars(user))
 
         return create_in_transaction(transaction)
-
-    def create_refresh_session(self, session: NewRefreshSession) -> RefreshSession:
-        session_ref = self._session_collection(session.user_id).document()
-        stored_session = RefreshSession(id=session_ref.id, **vars(session))
-        session_ref.create(
-            {
-                "user_id": session.user_id,
-                "expires_at": session.expires_at,
-                "revoked_at": None,
-            }
-        )
-        return stored_session
-
-    def get_refresh_session(
-        self, user_id: str, session_id: str
-    ) -> RefreshSession | None:
-        snapshot = self._session_document(user_id, session_id).get()
-        if not snapshot.exists:
-            return None
-        data = snapshot.to_dict() or {}
-        return RefreshSession(
-            id=snapshot.id,
-            user_id=data["user_id"],
-            expires_at=data["expires_at"],
-            revoked_at=data.get("revoked_at"),
-        )
-
-    def revoke_refresh_session(
-        self, user_id: str, session_id: str, revoked_at: datetime
-    ) -> bool:
-        client = self.client
-        session_ref = self._session_document(user_id, session_id)
-        transaction = client.transaction()
-
-        @firestore.transactional
-        def revoke_in_transaction(
-            active_transaction: firestore.Transaction,
-        ) -> bool:
-            snapshot = session_ref.get(transaction=active_transaction)
-            if not snapshot.exists:
-                return False
-            data = snapshot.to_dict() or {}
-            if data.get("revoked_at") is not None:
-                return False
-            active_transaction.update(session_ref, {"revoked_at": revoked_at})
-            return True
-
-        return revoke_in_transaction(transaction)
-
-    def _session_document(self, user_id: str, session_id: str):
-        return self._session_collection(user_id).document(session_id)
-
-    def _session_collection(self, user_id: str):
-        return (
-            self.client.collection(self.USERS_COLLECTION)
-            .document(user_id)
-            .collection(self.SESSIONS_COLLECTION)
-        )
 
     def _query_by_email(self, email: str):
         return (

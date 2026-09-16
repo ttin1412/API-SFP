@@ -9,6 +9,8 @@ from app.auth.repository import (
     AuthRepository,
     FirestoreAuthRepository,
     InMemoryAuthRepository,
+    InMemoryRefreshSessionRepository,
+    RefreshSessionRepository,
 )
 from app.auth.service import AuthService
 from app.config.settings import Settings, get_settings
@@ -27,7 +29,10 @@ def create_auth_repository(settings: Settings) -> AuthRepository:
     )
 
 
-def create_app(auth_repository: AuthRepository | None = None) -> FastAPI:
+def create_app(
+    auth_repository: AuthRepository | None = None,
+    refresh_sessions: RefreshSessionRepository | None = None,
+) -> FastAPI:
     """Create and configure the API application."""
     settings = get_settings()
     application = FastAPI(
@@ -36,7 +41,9 @@ def create_app(auth_repository: AuthRepository | None = None) -> FastAPI:
         debug=settings.debug,
     )
     application.state.auth_service = AuthService(
-        auth_repository or create_auth_repository(settings), settings
+        auth_repository or create_auth_repository(settings),
+        refresh_sessions or InMemoryRefreshSessionRepository(),
+        settings,
     )
     application.include_router(auth_router)
 
