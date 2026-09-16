@@ -13,6 +13,8 @@ def test_settings_have_safe_local_defaults() -> None:
     assert settings.max_file_size == 52_428_800
     assert settings.quarantine_prefix == "quarantine/"
     assert settings.trusted_prefix == "trusted/"
+    assert settings.auth_repository_backend == "firestore"
+    assert settings.firestore_database == "(default)"
 
 
 def test_settings_read_environment_variables(monkeypatch) -> None:

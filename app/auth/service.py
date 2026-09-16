@@ -10,7 +10,7 @@ import jwt
 from jwt import InvalidTokenError
 from pwdlib import PasswordHash
 
-from app.auth.models import RefreshSession, User, UserRole
+from app.auth.models import NewRefreshSession, NewUser, User, UserRole
 from app.auth.repository import AuthRepository
 from app.auth.schemas import TokenResponse, normalize_email
 from app.config.settings import Settings
@@ -45,15 +45,15 @@ class AuthService:
 
     def register(self, email: str, password: str) -> User:
         now = self._now()
-        user = User(
-            id=str(uuid4()),
+        new_user = NewUser(
             email=normalize_email(email),
             password_hash=self.password_hash.hash(password),
             role=UserRole.USER,
             is_active=True,
             created_at=now,
         )
-        if not self.repository.create_user(user):
+        user = self.repository.create_user(new_user)
+        if user is None:
             raise EmailAlreadyRegisteredError
         return user
 
@@ -69,7 +69,7 @@ class AuthService:
 
     def refresh(self, refresh_token: str) -> TokenResponse:
         claims = self.decode_token(refresh_token, expected_type="refresh")
-        session = self.repository.get_refresh_session(claims.token_id)
+        session = self.repository.get_refresh_session(claims.subject, claims.token_id)
         now = self._now()
         if (
             session is None
@@ -84,17 +84,17 @@ class AuthService:
             raise AuthenticationError
 
         # Refresh tokens are single use. Rotation limits the impact of theft.
-        if not self.repository.revoke_refresh_session(session.id, now):
+        if not self.repository.revoke_refresh_session(session.user_id, session.id, now):
             raise AuthenticationError
         return self._issue_token_pair(user)
 
     def logout(self, refresh_token: str) -> None:
         claims = self.decode_token(refresh_token, expected_type="refresh")
-        session = self.repository.get_refresh_session(claims.token_id)
+        session = self.repository.get_refresh_session(claims.subject, claims.token_id)
         if session is None or session.user_id != claims.subject:
             raise AuthenticationError
         # Logging out twice has the same final state and is intentionally idempotent.
-        self.repository.revoke_refresh_session(session.id, self._now())
+        self.repository.revoke_refresh_session(session.user_id, session.id, self._now())
 
     def authenticate_access_token(self, access_token: str) -> User:
         claims = self.decode_token(access_token, expected_type="access")
@@ -131,7 +131,12 @@ class AuthService:
             minutes=self.settings.access_token_expire_minutes
         )
         refresh_expires = now + timedelta(days=self.settings.refresh_token_expire_days)
-        refresh_id = str(uuid4())
+        refresh_session = self.repository.create_refresh_session(
+            NewRefreshSession(
+                user_id=user.id,
+                expires_at=refresh_expires,
+            )
+        )
 
         access_token = self._encode_token(
             user=user,
@@ -143,16 +148,9 @@ class AuthService:
         refresh_token = self._encode_token(
             user=user,
             token_type="refresh",
-            token_id=refresh_id,
+            token_id=refresh_session.id,
             now=now,
             expires_at=refresh_expires,
-        )
-        self.repository.create_refresh_session(
-            RefreshSession(
-                id=refresh_id,
-                user_id=user.id,
-                expires_at=refresh_expires,
-            )
         )
         return TokenResponse(
             access_token=access_token,

@@ -5,9 +5,26 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.api.routes.auth import router as auth_router
-from app.auth.repository import AuthRepository, InMemoryAuthRepository
+from app.auth.repository import (
+    AuthRepository,
+    FirestoreAuthRepository,
+    InMemoryAuthRepository,
+)
 from app.auth.service import AuthService
-from app.config.settings import get_settings
+from app.config.settings import Settings, get_settings
+from app.database.firestore import get_firestore_client
+
+
+def create_auth_repository(settings: Settings) -> AuthRepository:
+    """Build the configured authentication persistence adapter."""
+    if settings.auth_repository_backend == "memory":
+        return InMemoryAuthRepository()
+    return FirestoreAuthRepository(
+        lambda: get_firestore_client(
+            settings.gcp_project_id,
+            settings.firestore_database,
+        )
+    )
 
 
 def create_app(auth_repository: AuthRepository | None = None) -> FastAPI:
@@ -19,7 +36,7 @@ def create_app(auth_repository: AuthRepository | None = None) -> FastAPI:
         debug=settings.debug,
     )
     application.state.auth_service = AuthService(
-        auth_repository or InMemoryAuthRepository(), settings
+        auth_repository or create_auth_repository(settings), settings
     )
     application.include_router(auth_router)
 

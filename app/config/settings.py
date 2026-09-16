@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,8 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, validation_alias="API_DEBUG")
 
     gcp_project_id: str = ""
+    firestore_database: str = "(default)"
+    auth_repository_backend: Literal["firestore", "memory"] = "firestore"
     gcs_bucket_name: str = ""
     quarantine_prefix: str = "quarantine/"
     trusted_prefix: str = "trusted/"

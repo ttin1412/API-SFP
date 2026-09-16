@@ -33,8 +33,12 @@ Check the service at <http://localhost:8080/health>. The expected response is:
 Authentication endpoints are available under `/api/v1/auth`: `register`,
 `login`, `refresh`, and `logout`. Access tokens are sent as
 `Authorization: Bearer <token>`. Refresh tokens rotate on use and are revoked
-by logout. The current Phase 1 repository is process-local; a persistent
-Firestore implementation will replace it when database integration is added.
+by logout. User accounts and refresh sessions are persisted in Firestore by
+default. Set `GCP_PROJECT_ID`, and use Application Default Credentials locally
+(`gcloud auth application-default login`) or a least-privilege service account
+in Cloud Run. Set `AUTH_REPOSITORY_BACKEND=memory` only for local ephemeral use.
+Refresh sessions are stored below their owning user at
+`users/{user_id}/refresh_sessions/{session_id}`.
 The authenticated `GET /api/v1/auth/me` endpoint can be used to validate an
 access token. Set `JWT_SECRET_KEY` to a random value of at least 32 characters
 outside local development.
@@ -52,8 +56,8 @@ ruff format --check .
 Build from the repository root and run the image:
 
 ```bash
-docker build -f docker/Dockerfile -t api-sfp:phase0 .
-docker run --rm -p 8080:8080 --env-file .env api-sfp:phase0
+docker build -f docker/Dockerfile -t api-sfp:phase1 .
+docker run --rm -p 8080:8080 --env-file .env api-sfp:phase1
 ```
 
 ## Configuration
@@ -61,7 +65,5 @@ docker run --rm -p 8080:8080 --env-file .env api-sfp:phase0
 Configuration is read from environment variables. Copy
 `environments/.env.example` to `.env` for local development. The checked-in
 example contains no credentials; never commit the local `.env` file or service
-account keys.
-
-Cloud integrations are intentionally not initialized in Phase 0, so their
-configuration values may remain empty while running the health endpoint.
+account keys. For a named Firestore database, set `FIRESTORE_DATABASE` to its
+database ID; otherwise retain `(default)`.

@@ -15,6 +15,17 @@ class UserRole(str, Enum):
 
 
 @dataclass(frozen=True)
+class NewUser:
+    """Account data before its persistence layer assigns an ID."""
+
+    email: str
+    password_hash: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class User:
     """A registered API user."""
 
@@ -24,6 +35,14 @@ class User:
     role: UserRole
     is_active: bool
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class NewRefreshSession:
+    """Refresh-session data before its persistence layer assigns an ID."""
+
+    user_id: str
+    expires_at: datetime
 
 
 @dataclass(frozen=True)
