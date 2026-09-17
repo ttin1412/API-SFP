@@ -12,6 +12,7 @@ def test_settings_have_safe_local_defaults() -> None:
     assert settings.app_env == "local"
     assert settings.max_file_size == 52_428_800
     assert settings.quarantine_prefix == "quarantine/"
+    assert settings.signed_upload_url_expire_minutes == 15
     assert settings.trusted_prefix == "trusted/"
     assert settings.auth_repository_backend == "firestore"
     assert settings.firestore_database == "(default)"

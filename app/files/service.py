@@ -9,6 +9,7 @@ from pathlib import PurePath
 from app.config.settings import Settings
 from app.files.models import FileMetadata, FileStatus
 from app.files.repository import FileRepository
+from app.storage.base import ObjectStorage
 
 MIME_TYPE_PATTERN = re.compile(r"^[^\s/;]+/[^\s/;]+$")
 
@@ -24,9 +25,36 @@ class InvalidFileMetadataError(Exception):
 class FileService:
     """Create and access file metadata within an owner's security boundary."""
 
-    def __init__(self, repository: FileRepository, settings: Settings) -> None:
+    def __init__(
+        self,
+        repository: FileRepository,
+        storage: ObjectStorage,
+        settings: Settings,
+    ) -> None:
         self.repository = repository
+        self.storage = storage
         self.settings = settings
+
+    def create_upload_url(
+        self,
+        *,
+        owner_id: str,
+        filename: str,
+        content_type: str,
+        size: int,
+    ) -> tuple[FileMetadata, str]:
+        """Create pending metadata and a direct-to-quarantine upload URL."""
+        file = self.create_pending_upload(
+            owner_id=owner_id,
+            filename=filename,
+            content_type=content_type,
+            size=size,
+        )
+        upload_url = self.storage.generate_upload_url(
+            storage_key=file.storage_key,
+            content_type=file.declared_mime_type,
+        )
+        return file, upload_url
 
     def create_pending_upload(
         self,

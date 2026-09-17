@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     firestore_database: str = "(default)"
     auth_repository_backend: Literal["firestore", "memory"] = "firestore"
     gcs_bucket_name: str = ""
+    signed_upload_url_expire_minutes: int = Field(default=15, gt=0, le=60)
     quarantine_prefix: str = "quarantine/"
     trusted_prefix: str = "trusted/"
     max_file_size: int = Field(default=52_428_800, gt=0)

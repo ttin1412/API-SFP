@@ -35,7 +35,7 @@ def create_upload_url(
 ) -> UploadURLResponse:
     """Create pending metadata for a future direct-to-quarantine upload."""
     try:
-        file = service.create_pending_upload(
+        file, upload_url = service.create_upload_url(
             owner_id=user.id,
             filename=payload.filename,
             content_type=payload.content_type,
@@ -46,7 +46,10 @@ def create_upload_url(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
-    return UploadURLResponse(file=FileResponse.from_file(file))
+    return UploadURLResponse(
+        file=FileResponse.from_file(file),
+        upload_url=upload_url,
+    )
 
 
 @router.get("", response_model=list[FileResponse])

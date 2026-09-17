@@ -53,7 +53,7 @@ class FileResponse(BaseModel):
 
 
 class UploadURLResponse(BaseModel):
-    """Metadata prepared for an upload; URL generation arrives in Phase 3."""
+    """Pending metadata and the URL for a direct upload to quarantine."""
 
     file: FileResponse
-    upload_url: Optional[str] = None  # noqa: UP045
+    upload_url: str

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from fastapi import FastAPI
 
 from app.api.routes.auth import router as auth_router
@@ -22,6 +24,8 @@ from app.files.repository import (
     InMemoryFileRepository,
 )
 from app.files.service import FileService
+from app.storage.base import ObjectStorage
+from app.storage.gcs import GCSStorage, get_storage_client
 
 
 def create_auth_repository(settings: Settings) -> AuthRepository:
@@ -48,10 +52,20 @@ def create_file_repository(settings: Settings) -> FileRepository:
     )
 
 
+def create_object_storage(settings: Settings) -> ObjectStorage:
+    """Build the Google Cloud Storage adapter used for signed uploads."""
+    return GCSStorage(
+        settings.gcs_bucket_name,
+        client_factory=lambda: get_storage_client(settings.gcp_project_id),
+        expiration=timedelta(minutes=settings.signed_upload_url_expire_minutes),
+    )
+
+
 def create_app(
     auth_repository: AuthRepository | None = None,
     refresh_sessions: RefreshSessionRepository | None = None,
     file_repository: FileRepository | None = None,
+    object_storage: ObjectStorage | None = None,
 ) -> FastAPI:
     """Create and configure the API application."""
     settings = get_settings()
@@ -66,7 +80,9 @@ def create_app(
         settings,
     )
     application.state.file_service = FileService(
-        file_repository or create_file_repository(settings), settings
+        file_repository or create_file_repository(settings),
+        object_storage or create_object_storage(settings),
+        settings,
     )
     application.include_router(auth_router)
     application.include_router(files_router)

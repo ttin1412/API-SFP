@@ -43,6 +43,12 @@ The authenticated `GET /api/v1/auth/me` endpoint can be used to validate an
 access token. Set `JWT_SECRET_KEY` to a random value of at least 32 characters
 outside local development.
 
+`POST /api/v1/files/upload-url` creates `PENDING_UPLOAD` metadata and returns a
+short-lived V4 signed URL for a `PUT` directly to
+`quarantine/{user_id}/{file_id}` in `GCS_BUCKET_NAME`. The upload request must
+send the same `Content-Type` declared when requesting the URL. Configure the
+validity window with `SIGNED_UPLOAD_URL_EXPIRE_MINUTES` (15 minutes by default).
+
 ## Quality checks
 
 ```bash

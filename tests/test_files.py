@@ -7,11 +7,21 @@ from app.files.repository import InMemoryFileRepository
 from app.main import create_app
 
 
+class FakeObjectStorage:
+    def __init__(self) -> None:
+        self.uploads: list[tuple[str, str]] = []
+
+    def generate_upload_url(self, *, storage_key: str, content_type: str) -> str:
+        self.uploads.append((storage_key, content_type))
+        return f"https://storage.example.test/{storage_key}?signed=true"
+
+
 def make_client() -> TestClient:
     return TestClient(
         create_app(
             auth_repository=InMemoryAuthRepository(),
             file_repository=InMemoryFileRepository(),
+            object_storage=FakeObjectStorage(),
         )
     )
 
@@ -78,10 +88,11 @@ def test_create_list_get_and_delete_file_metadata() -> None:
 
     assert created.status_code == 201
     body = created.json()
-    assert body["upload_url"] is None
+    assert body["upload_url"].startswith("https://storage.example.test/quarantine/")
     assert body["file"]["status"] == "PENDING_UPLOAD"
     assert body["file"]["extension"] == ".jpg"
     assert body["file"]["storage_key"].startswith("quarantine/")
+    assert body["file"]["storage_key"] in body["upload_url"]
     file_id = body["file"]["id"]
 
     listed = client.get("/api/v1/files", headers=authorization(token))
