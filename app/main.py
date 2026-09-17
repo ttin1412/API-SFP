@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.files import router as files_router
 from app.auth.repository import (
     AuthRepository,
     FirestoreAuthRepository,
@@ -15,6 +16,12 @@ from app.auth.repository import (
 from app.auth.service import AuthService
 from app.config.settings import Settings, get_settings
 from app.database.firestore import get_firestore_client
+from app.files.repository import (
+    FileRepository,
+    FirestoreFileRepository,
+    InMemoryFileRepository,
+)
+from app.files.service import FileService
 
 
 def create_auth_repository(settings: Settings) -> AuthRepository:
@@ -29,9 +36,22 @@ def create_auth_repository(settings: Settings) -> AuthRepository:
     )
 
 
+def create_file_repository(settings: Settings) -> FileRepository:
+    """Build the configured file metadata persistence adapter."""
+    if settings.auth_repository_backend == "memory":
+        return InMemoryFileRepository()
+    return FirestoreFileRepository(
+        lambda: get_firestore_client(
+            settings.gcp_project_id,
+            settings.firestore_database,
+        )
+    )
+
+
 def create_app(
     auth_repository: AuthRepository | None = None,
     refresh_sessions: RefreshSessionRepository | None = None,
+    file_repository: FileRepository | None = None,
 ) -> FastAPI:
     """Create and configure the API application."""
     settings = get_settings()
@@ -45,7 +65,11 @@ def create_app(
         refresh_sessions or InMemoryRefreshSessionRepository(),
         settings,
     )
+    application.state.file_service = FileService(
+        file_repository or create_file_repository(settings), settings
+    )
     application.include_router(auth_router)
+    application.include_router(files_router)
 
     @application.get("/health", tags=["health"])
     async def health() -> dict[str, str]:

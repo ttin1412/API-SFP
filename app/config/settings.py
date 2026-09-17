@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     quarantine_prefix: str = "quarantine/"
     trusted_prefix: str = "trusted/"
     max_file_size: int = Field(default=52_428_800, gt=0)
+    supported_file_extensions: tuple[str, ...] = (
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".txt",
+        ".zip",
+    )
     queue_name: str = ""
     worker_endpoint: str = ""
 

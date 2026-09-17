@@ -7,6 +7,8 @@ from typing import Any
 
 from app.auth.models import NewUser, UserRole
 from app.auth.repository import FirestoreAuthRepository
+from app.files.models import FileMetadata, FileStatus
+from app.files.repository import FirestoreFileRepository
 
 
 class FakeSnapshot:
@@ -59,13 +61,19 @@ class FakeCollection:
         return FakeDocument(self.documents, document_id, self.subcollections)
 
     def where(self, *, filter: Any) -> FakeQuery:
-        return FakeQuery(self.documents, filter.value)
+        return FakeQuery(self.documents, filter.field_path, filter.value)
 
 
 class FakeQuery:
-    def __init__(self, documents: dict[str, dict[str, Any]], email: str) -> None:
+    def __init__(
+        self,
+        documents: dict[str, dict[str, Any]],
+        field: str,
+        value: object,
+    ) -> None:
         self.documents = documents
-        self.email = email
+        self.field = field
+        self.value = value
 
     def limit(self, count: int) -> FakeQuery:
         return self
@@ -74,7 +82,7 @@ class FakeQuery:
         return iter(
             FakeSnapshot(document_id, data)
             for document_id, data in self.documents.items()
-            if data["email"] == self.email
+            if data[self.field] == self.value
         )
 
 
@@ -87,6 +95,9 @@ class FakeTransaction:
 
     def update(self, document: FakeDocument, data: dict[str, Any]) -> None:
         document.documents[document.document_id].update(data)
+
+    def delete(self, document: FakeDocument) -> None:
+        del document.documents[document.document_id]
 
 
 class FakeClient:
@@ -135,3 +146,42 @@ def test_firestore_repository_persists_account_and_prevents_duplicate_email(
     assert client.collections["users"][user.id]["password_hash"] == user.password_hash
     assert "id" not in client.collections["users"][user.id]
     assert "user_emails" not in client.collections
+
+
+def test_firestore_file_repository_scopes_reads_and_deletes_to_owner(
+    monkeypatch,
+) -> None:
+    from app.files import repository as repository_module
+
+    monkeypatch.setattr(repository_module.firestore, "transactional", lambda fn: fn)
+    client = FakeClient()
+    repository = FirestoreFileRepository(lambda: client)  # type: ignore[arg-type]
+    now = datetime.now(timezone.utc)
+    file_id = repository.new_file_id()
+    alice_file = FileMetadata(
+        id=file_id,
+        owner_id="alice",
+        original_filename="photo.jpg",
+        storage_key=f"quarantine/alice/{file_id}",
+        detected_mime_type=None,
+        declared_mime_type="image/jpeg",
+        extension=".jpg",
+        size=128,
+        sha256=None,
+        status=FileStatus.PENDING_UPLOAD,
+        rejection_reason=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    repository.create(alice_file)
+
+    assert alice_file.id == "firestore-id-1"
+    assert repository.list_for_owner("alice") == [alice_file]
+    assert repository.list_for_owner("bob") == []
+    assert repository.get_for_owner(alice_file.id, "alice") == alice_file
+    assert repository.get_for_owner(alice_file.id, "bob") is None
+    assert repository.delete_for_owner(alice_file.id, "bob") is False
+    assert repository.get_for_owner(alice_file.id, "alice") == alice_file
+    assert repository.delete_for_owner(alice_file.id, "alice") is True
+    assert repository.get_for_owner(alice_file.id, "alice") is None
