@@ -1,8 +1,8 @@
 # Secure File Processing API
 
 FastAPI service for the Secure File Processing Platform. This repository is
-independent from the Worker repository and currently contains the Phase 1 API
-authentication implementation.
+independent from the Worker repository and currently contains the API through
+Phase 4 upload-event handling.
 
 The API will own authentication, authorization, file metadata, signed upload
 URLs, and scan-job creation. Uploaded file contents will not be proxied or
@@ -48,6 +48,13 @@ short-lived V4 signed URL for a `PUT` directly to
 `quarantine/{user_id}/{file_id}` in `GCS_BUCKET_NAME`. The upload request must
 send the same `Content-Type` declared when requesting the URL. Configure the
 validity window with `SIGNED_UPLOAD_URL_EXPIRE_MINUTES` (15 minutes by default).
+
+Configure an authenticated Eventarc Cloud Storage finalized trigger to send
+CloudEvents to `POST /api/v1/events/storage`. The handler accepts only events
+for `GCS_BUCKET_NAME` and exact quarantine object keys, then atomically changes
+matching metadata from `PENDING_UPLOAD` to `UPLOADED`. Delivery retries are
+idempotent. Protect this internal endpoint with Cloud Run IAM and grant its
+invoker role only to the Eventarc delivery service account.
 
 ## Quality checks
 

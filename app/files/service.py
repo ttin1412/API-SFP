@@ -22,6 +22,10 @@ class InvalidFileMetadataError(Exception):
     """Raised when declared upload metadata violates policy."""
 
 
+class InvalidUploadEventError(Exception):
+    """Raised when a storage event is not a valid quarantine upload."""
+
+
 class FileService:
     """Create and access file metadata within an owner's security boundary."""
 
@@ -108,6 +112,41 @@ class FileService:
     def delete_file(self, file_id: str, owner_id: str) -> None:
         if not self.repository.delete_for_owner(file_id, owner_id):
             raise FileNotFoundError
+
+    def handle_upload_finalized(
+        self,
+        *,
+        event_type: str,
+        bucket: str,
+        storage_key: str,
+    ) -> FileMetadata | None:
+        """Handle an authenticated Cloud Storage finalized event idempotently."""
+        if event_type != "google.cloud.storage.object.v1.finalized":
+            raise InvalidUploadEventError("Unsupported Cloud Storage event type")
+        if not self.settings.gcs_bucket_name:
+            raise InvalidUploadEventError("GCS_BUCKET_NAME must be configured")
+        if bucket != self.settings.gcs_bucket_name:
+            raise InvalidUploadEventError("Unexpected Cloud Storage bucket")
+
+        quarantine_prefix = self.settings.quarantine_prefix.strip("/")
+        object_prefix = f"{quarantine_prefix}/"
+        relative_key = storage_key.removeprefix(object_prefix)
+        parts = relative_key.split("/")
+        if (
+            not quarantine_prefix
+            or not storage_key.startswith(object_prefix)
+            or len(parts) != 2
+            or not parts[0]
+            or not parts[1]
+        ):
+            raise InvalidUploadEventError("Invalid quarantine object name")
+
+        file_id = parts[1]
+        return self.repository.mark_uploaded(
+            file_id,
+            storage_key,
+            datetime.now(timezone.utc),
+        )
 
     @staticmethod
     def _validate_filename(filename: str) -> None:

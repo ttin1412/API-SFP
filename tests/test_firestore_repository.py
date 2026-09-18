@@ -185,3 +185,47 @@ def test_firestore_file_repository_scopes_reads_and_deletes_to_owner(
     assert repository.get_for_owner(alice_file.id, "alice") == alice_file
     assert repository.delete_for_owner(alice_file.id, "alice") is True
     assert repository.get_for_owner(alice_file.id, "alice") is None
+
+
+def test_firestore_file_repository_marks_upload_atomically_and_idempotently(
+    monkeypatch,
+) -> None:
+    from app.files import repository as repository_module
+
+    monkeypatch.setattr(repository_module.firestore, "transactional", lambda fn: fn)
+    client = FakeClient()
+    repository = FirestoreFileRepository(lambda: client)  # type: ignore[arg-type]
+    created_at = datetime.now(timezone.utc)
+    file = FileMetadata(
+        id="file-123",
+        owner_id="alice",
+        original_filename="photo.jpg",
+        storage_key="quarantine/alice/file-123",
+        detected_mime_type=None,
+        declared_mime_type="image/jpeg",
+        extension=".jpg",
+        size=128,
+        sha256=None,
+        status=FileStatus.PENDING_UPLOAD,
+        rejection_reason=None,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    repository.create(file)
+    uploaded_at = datetime.now(timezone.utc)
+
+    uploaded = repository.mark_uploaded(file.id, file.storage_key, uploaded_at)
+    duplicate = repository.mark_uploaded(file.id, file.storage_key, uploaded_at)
+    mismatch = repository.mark_uploaded(
+        file.id,
+        "quarantine/mallory/file-123",
+        uploaded_at,
+    )
+
+    assert uploaded is not None
+    assert uploaded.status == FileStatus.UPLOADED
+    assert uploaded.updated_at == uploaded_at
+    assert duplicate == uploaded
+    assert mismatch is None
+    assert client.collections["files"][file.id]["status"] == "UPLOADED"
+    assert client.collections["files"][file.id]["updated_at"] == uploaded_at

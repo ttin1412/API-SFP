@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime
 from threading import RLock
 from typing import Callable, Protocol
 from uuid import uuid4
@@ -25,6 +27,13 @@ class FileRepository(Protocol):
     def get_for_owner(self, file_id: str, owner_id: str) -> FileMetadata | None: ...
 
     def delete_for_owner(self, file_id: str, owner_id: str) -> bool: ...
+
+    def mark_uploaded(
+        self,
+        file_id: str,
+        storage_key: str,
+        updated_at: datetime,
+    ) -> FileMetadata | None: ...
 
 
 class InMemoryFileRepository:
@@ -65,6 +74,29 @@ class InMemoryFileRepository:
                 return False
             del self._files[file_id]
             return True
+
+    def mark_uploaded(
+        self,
+        file_id: str,
+        storage_key: str,
+        updated_at: datetime,
+    ) -> FileMetadata | None:
+        """Atomically apply the upload transition, tolerating event retries."""
+        with self._lock:
+            file = self._files.get(file_id)
+            if file is None or file.storage_key != storage_key:
+                return None
+            if file.status == FileStatus.UPLOADED:
+                return file
+            if file.status != FileStatus.PENDING_UPLOAD:
+                return None
+            uploaded = replace(
+                file,
+                status=FileStatus.UPLOADED,
+                updated_at=updated_at,
+            )
+            self._files[file_id] = uploaded
+            return uploaded
 
 
 class FirestoreFileRepository:
@@ -124,6 +156,44 @@ class FirestoreFileRepository:
             return True
 
         return delete_in_transaction(transaction)
+
+    def mark_uploaded(
+        self,
+        file_id: str,
+        storage_key: str,
+        updated_at: datetime,
+    ) -> FileMetadata | None:
+        """Atomically move matching pending metadata to UPLOADED."""
+        client = self.client
+        document = client.collection(self.FILES_COLLECTION).document(file_id)
+        transaction = client.transaction()
+
+        @firestore.transactional
+        def update_in_transaction(
+            active_transaction: firestore.Transaction,
+        ) -> FileMetadata | None:
+            snapshot = document.get(transaction=active_transaction)
+            file = self._from_snapshot(snapshot)
+            if file is None or file.storage_key != storage_key:
+                return None
+            if file.status == FileStatus.UPLOADED:
+                return file
+            if file.status != FileStatus.PENDING_UPLOAD:
+                return None
+            active_transaction.update(
+                document,
+                {
+                    "status": FileStatus.UPLOADED.value,
+                    "updated_at": updated_at,
+                },
+            )
+            return replace(
+                file,
+                status=FileStatus.UPLOADED,
+                updated_at=updated_at,
+            )
+
+        return update_in_transaction(transaction)
 
     @staticmethod
     def _to_document(file: FileMetadata) -> dict[str, object]:

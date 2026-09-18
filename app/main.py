@@ -7,6 +7,7 @@ from datetime import timedelta
 from fastapi import FastAPI
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.events import router as events_router
 from app.api.routes.files import router as files_router
 from app.auth.repository import (
     AuthRepository,
@@ -66,9 +67,10 @@ def create_app(
     refresh_sessions: RefreshSessionRepository | None = None,
     file_repository: FileRepository | None = None,
     object_storage: ObjectStorage | None = None,
+    settings: Settings | None = None,
 ) -> FastAPI:
     """Create and configure the API application."""
-    settings = get_settings()
+    settings = settings or get_settings()
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -86,6 +88,7 @@ def create_app(
     )
     application.include_router(auth_router)
     application.include_router(files_router)
+    application.include_router(events_router)
 
     @application.get("/health", tags=["health"])
     async def health() -> dict[str, str]:
