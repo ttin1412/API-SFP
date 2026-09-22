@@ -16,6 +16,7 @@ def test_settings_have_safe_local_defaults() -> None:
     assert settings.trusted_prefix == "trusted/"
     assert settings.auth_repository_backend == "firestore"
     assert settings.firestore_database == "(default)"
+    assert settings.queue_location == "us-central1"
 
 
 def test_settings_read_environment_variables(monkeypatch) -> None:

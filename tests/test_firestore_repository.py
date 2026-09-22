@@ -9,6 +9,8 @@ from app.auth.models import NewUser, UserRole
 from app.auth.repository import FirestoreAuthRepository
 from app.files.models import FileMetadata, FileStatus
 from app.files.repository import FirestoreFileRepository
+from app.jobs.models import Job, JobStatus, JobType
+from app.jobs.repository import FirestoreJobRepository
 
 
 class FakeSnapshot:
@@ -229,3 +231,32 @@ def test_firestore_file_repository_marks_upload_atomically_and_idempotently(
     assert mismatch is None
     assert client.collections["files"][file.id]["status"] == "UPLOADED"
     assert client.collections["files"][file.id]["updated_at"] == uploaded_at
+
+
+def test_firestore_job_repository_creates_deterministic_job_once(monkeypatch) -> None:
+    from app.jobs import repository as repository_module
+
+    monkeypatch.setattr(repository_module.firestore, "transactional", lambda fn: fn)
+    client = FakeClient()
+    repository = FirestoreJobRepository(lambda: client)  # type: ignore[arg-type]
+    now = datetime.now(timezone.utc)
+    job = Job(
+        id="security-scan-file-123",
+        file_id="file-123",
+        type=JobType.SECURITY_SCAN,
+        status=JobStatus.QUEUED,
+        retry_count=0,
+        error=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    created = repository.create_if_absent(job)
+    duplicate = repository.create_if_absent(job)
+
+    assert created == job
+    assert duplicate == job
+    assert repository.get(job.id) == job
+    assert list(client.collections["jobs"]) == [job.id]
+    assert client.collections["jobs"][job.id]["type"] == "SECURITY_SCAN"
+    assert "id" not in client.collections["jobs"][job.id]

@@ -8,7 +8,9 @@ from app.auth.repository import InMemoryAuthRepository
 from app.config.settings import Settings
 from app.files.models import FileMetadata, FileStatus
 from app.files.repository import InMemoryFileRepository
+from app.jobs.repository import InMemoryJobRepository
 from app.main import create_app
+from app.queue.base import InMemoryJobQueue
 
 EVENT_HEADERS = {"ce-type": "google.cloud.storage.object.v1.finalized"}
 
@@ -37,10 +39,14 @@ def make_client() -> tuple[TestClient, InMemoryFileRepository, FileMetadata]:
         updated_at=now,
     )
     repository.create(file)
+    job_repository = InMemoryJobRepository()
+    job_queue = InMemoryJobQueue()
     app = create_app(
         auth_repository=InMemoryAuthRepository(),
         file_repository=repository,
         object_storage=FakeObjectStorage(),
+        job_repository=job_repository,
+        job_queue=job_queue,
         settings=Settings(
             auth_repository_backend="memory",
             gcs_bucket_name="uploads-test",
@@ -67,6 +73,13 @@ def test_finalized_event_marks_pending_file_uploaded_idempotently() -> None:
     assert uploaded.status == FileStatus.UPLOADED
     assert uploaded.updated_at > pending.updated_at
     assert repository.get_for_owner(pending.id, pending.owner_id) == uploaded
+    job_service = client.app.state.job_service
+    job = job_service.repository.get("security-scan-file-123")
+    assert job is not None
+    assert job.file_id == pending.id
+    assert job.type.value == "SECURITY_SCAN"
+    assert job.status.value == "QUEUED"
+    assert [queued.id for queued in job_service.queue.jobs] == [job.id]
 
 
 def test_event_rejects_wrong_bucket_type_and_object_path() -> None:

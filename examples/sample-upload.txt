@@ -1,0 +1,3 @@
+Secure File Processing upload test.
+
+This harmless text file is intended for testing a signed upload URL.

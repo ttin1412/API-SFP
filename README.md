@@ -2,7 +2,7 @@
 
 FastAPI service for the Secure File Processing Platform. This repository is
 independent from the Worker repository and currently contains the API through
-Phase 4 upload-event handling.
+Phase 5 scan-job creation and queue dispatch.
 
 The API will own authentication, authorization, file metadata, signed upload
 URLs, and scan-job creation. Uploaded file contents will not be proxied or
@@ -50,11 +50,23 @@ send the same `Content-Type` declared when requesting the URL. Configure the
 validity window with `SIGNED_UPLOAD_URL_EXPIRE_MINUTES` (15 minutes by default).
 
 Configure an authenticated Eventarc Cloud Storage finalized trigger to send
-CloudEvents to `POST /api/v1/events/storage`. The handler accepts only events
-for `GCS_BUCKET_NAME` and exact quarantine object keys, then atomically changes
-matching metadata from `PENDING_UPLOAD` to `UPLOADED`. Delivery retries are
-idempotent. Protect this internal endpoint with Cloud Run IAM and grant its
-invoker role only to the Eventarc delivery service account.
+CloudEvents over its Pub/Sub transport to `POST /api/v1/events/storage`. This
+endpoint is the Job Dispatcher: it accepts only events for `GCS_BUCKET_NAME`
+and exact quarantine object keys, atomically changes matching metadata from
+`PENDING_UPLOAD` to `UPLOADED`, persists a `SECURITY_SCAN` job, and creates an
+HTTP task in Cloud Tasks for the Worker.
+
+Both the Firestore job document and Cloud Task use the deterministic ID
+`security-scan-{file_id}`. Pub/Sub/Eventarc redelivery therefore cannot create
+duplicate logical jobs or tasks. The dispatcher retries task creation even
+when the job already exists, which safely repairs an interrupted dispatch.
+
+Configure `QUEUE_NAME`, `QUEUE_LOCATION`, and `WORKER_ENDPOINT`. For a private
+Cloud Run Worker, set `WORKER_SERVICE_ACCOUNT_EMAIL` to a service account with
+`roles/run.invoker`; `WORKER_OIDC_AUDIENCE` defaults to `WORKER_ENDPOINT` when
+left empty. The API service account needs Firestore access and
+`roles/cloudtasks.enqueuer`. Protect the dispatcher endpoint with Cloud Run IAM
+and grant its invoker role only to the Eventarc delivery service account.
 
 ## Quality checks
 

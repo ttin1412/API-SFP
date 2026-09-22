@@ -42,7 +42,10 @@ class Settings(BaseSettings):
         ".zip",
     )
     queue_name: str = ""
+    queue_location: str = "us-central1"
     worker_endpoint: str = ""
+    worker_service_account_email: str = ""
+    worker_oidc_audience: str = ""
 
     jwt_secret_key: str = Field(default=DEFAULT_JWT_SECRET, min_length=32)
     jwt_algorithm: str = "HS256"
